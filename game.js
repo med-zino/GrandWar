@@ -33,6 +33,10 @@ let jumpCount = 0;
 let lives = 3;
 const groundLevel = canvas.height - 120;
 
+const bullets = [];
+const bulletSpeed = 7;
+const bulletSize = 5;
+
 // Player shape
 let shape = { x: 250, y: 250, radius: 20, color: 'red' };
 const playerImage = new Image();
@@ -78,25 +82,25 @@ const keys = {
 };
 
 // Load sound effects
-async function loadSounds() {
-    try {
-        const soundFiles = {
-            jump: 'jump.mp3',
-            doubleJump: 'jump.mp3',
-        };
+// async function loadSounds() {
+//     try {
+//         const soundFiles = {
+//             jump: 'jump.mp3',
+//             doubleJump: 'jump.mp3',
+//         };
 
-        for (const [name, file] of Object.entries(soundFiles)) {
-            const response = await fetch(file);
-            const arrayBuffer = await response.arrayBuffer();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            sounds[name] = audioBuffer;
-        }
+//         for (const [name, file] of Object.entries(soundFiles)) {
+//             const response = await fetch(file);
+//             const arrayBuffer = await response.arrayBuffer();
+//             const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+//             sounds[name] = audioBuffer;
+//         }
 
-        isAudioInitialized = true;
-    } catch (error) {
-        console.error('Error loading sounds:', error);
-    }
-}
+//         isAudioInitialized = true;
+//     } catch (error) {
+//         console.error('Error loading sounds:', error);
+//     }
+// }
 
 // Play sound effect function
 function playSound(soundName, volume = soundVolume) {
@@ -121,7 +125,7 @@ function initAudio() {
         });
     }
     if (!isAudioInitialized) {
-        loadSounds();
+        // loadSounds();
         bgMusic.volume = musicVolume;
         bgMusic.play();
     }
@@ -157,7 +161,7 @@ function createFish() {
     const height = 40;
     return {
         x: canvas.width + width,
-        y: canvas.height - height,
+        y: canvas.height ,
         width: width,
         height: height,
     };
@@ -186,34 +190,34 @@ function createProjectile(plane) {
 }
 
 // Check collision
-function checkCollision(circle, rect) {
-    const closestX = Math.max(rect.x, Math.min(circle.x, rect.x + (rect.width || rect.size)));
-    const closestY = Math.max(rect.y, Math.min(circle.y, rect.y + (rect.height || rect.size)));
+    function checkCollision(circle, rect) {
+        const closestX = Math.max(rect.x, Math.min(circle.x, rect.x + (rect.width || rect.size)));
+        const closestY = Math.max(rect.y, Math.min(circle.y, rect.y + (rect.height || rect.size)));
 
-    const distanceX = circle.x - closestX;
-    const distanceY = circle.y - closestY;
+        const distanceX = circle.x - closestX;
+        const distanceY = circle.y - closestY;
 
-    const collision = (distanceX * distanceX) + (distanceY * distanceY) < (circle.radius * circle.radius);
-    
-    if (collision && !gameOver) {
-        if (lives > 0) {
-            shape.x = 100;
-            shape.y = 100;
-            velocityY = 0;
-            jumpCount = 0;
+        const collision = (distanceX * distanceX) + (distanceY * distanceY) < (circle.radius * circle.radius);
+        
+        if (collision && !gameOver) {
+            if (lives > 0) {
+                shape.x = 100;
+                shape.y = 100;
+                velocityY = 0;
+                jumpCount = 0;
+            }
+            lives--; 
+            playSound('collision');
+
+            if (lives <= 0) {
+                gameOver = true;
+                bgMusic.pause();
+                bgMusic.currentTime = 0;
+            }
         }
-        lives--; 
-        playSound('collision');
-
-        if (lives <= 0) {
-            gameOver = true;
-            bgMusic.pause();
-            bgMusic.currentTime = 0;
-        }
+        
+        return collision;
     }
-    
-    return collision;
-}
 
 // Draw lives on the screen
 function drawLives() {
@@ -278,6 +282,7 @@ function resetGame() {
     projectiles = [];
     frameCount = 0;
     bgMusic.play();
+    bullets.length = 0;
 }
 
 // Handle click on restart button
@@ -307,6 +312,48 @@ window.addEventListener('keydown', (e) => {
     }
 });
 
+// Add this to your keyboard event listeners (after your existing keydown listener)
+window.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.key === 'Spacebar') { 
+        bullets.push(createBullet());
+    }
+});
+
+// Add this function to check bullet-fish collision
+function checkBulletCollision(bullet, fish) {
+    return !(bullet.x + bullet.width < fish.x || 
+            bullet.x > fish.x + fish.width ||
+            bullet.y + bullet.height < fish.y ||
+            bullet.y > fish.y + fish.height);
+}
+
+// Modify your update function to include bullet logic (add this inside the if(!gameOver) block)
+// Update and draw bullets
+for (let i = bullets.length - 1; i >= 0; i--) {
+    const bullet = bullets[i];
+    bullet.x += bullet.speed;
+    
+    drawBullet(bullet);
+    
+    // Remove bullets that go off screen
+    if (bullet.x > canvas.width) {
+        bullets.splice(i, 1);
+        continue;
+    }
+    
+    // Check collision with fish
+    for (let j = groundObstacles.length - 1; j >= 0; j--) {
+        const fish = groundObstacles[j];
+        if (checkBulletCollision(bullet, fish)) {
+            // Remove both bullet and fish
+            bullets.splice(i, 1);
+            groundObstacles.splice(j, 1);
+            score++; // Optionally increase score
+            break;
+        }
+    }
+}
+
 function drawBeach() {
     ctx.fillStyle = '#1E90FF'; // Deep blue to represent water
     ctx.fillRect(0, canvas.height - 100, canvas.width, 100);
@@ -334,6 +381,24 @@ heroImage.src = 'ship.png';
 
 function drawPlayer() {
     ctx.drawImage(heroImage, shape.x - shape.radius, shape.y - shape.radius, shape.radius * 4, shape.radius * 4);
+}
+
+
+// Add this function to create bullets
+function createBullet() {
+    return {
+        x: shape.x + shape.radius * 2, // Start from middle of ship
+        y: shape.y + shape.radius * 2, // Bottom of ship
+        width: bulletSize,
+        height: bulletSize,
+        speed: bulletSpeed
+    };
+}
+
+// Add this function to draw bullets
+function drawBullet(bullet) {
+    ctx.fillStyle = 'black';
+    ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
 }
 
 
@@ -379,7 +444,7 @@ function update() {
         for (let i = groundObstacles.length - 1; i >= 0; i--) {
             const fish = groundObstacles[i];
             fish.x -= groundObstacleSpeed;
-            fish.y = canvas.height - 120;
+            fish.y = canvas.height - 122;
             
             drawFish(fish);
 
@@ -427,6 +492,32 @@ function update() {
             }
         }
 
+        // Update and draw bullets
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            const bullet = bullets[i];
+            bullet.x += bullet.speed;
+            
+            drawBullet(bullet);
+            
+            // Remove bullets that go off screen
+            if (bullet.x > canvas.width) {
+                bullets.splice(i, 1);
+                continue;
+            }
+            
+            // Check collision with fish
+            for (let j = groundObstacles.length - 1; j >= 0; j--) {
+                const fish = groundObstacles[j];
+                if (checkBulletCollision(bullet, fish)) {
+                    // Remove both bullet and fish
+                    bullets.splice(i, 1);
+                    groundObstacles.splice(j, 1);
+                    score++; // Increase score when fish is shot
+                    break;
+                }
+            }
+        }
+
         if (heroImage.complete) {
             drawPlayer();
         }
@@ -447,8 +538,8 @@ function update() {
         shape.y += velocityY;
 
         // Ground collision
-        if (shape.y + shape.radius >= groundLevel  ) {
-            shape.y = groundLevel  - shape.radius;
+        if (shape.y + shape.radius >= groundLevel) {
+            shape.y = groundLevel - shape.radius;
             velocityY = 0;
             isOnGround = true;
             jumpCount = 0;
@@ -465,7 +556,6 @@ function update() {
 
     requestAnimationFrame(update);
 }
-
 
 // Create the start button
 const startButton = document.createElement('button');
